@@ -1,0 +1,125 @@
+PE header ( PE header끝부분과 각Section들의 끝에는 NULL padding이 존재) 최소 기본 단위개념때문에
+파일,메모리,네트워크 패킷을 처리할때 효율을 높이기 위해 최소 기본 단위가 있는 것
+
+*각 섹션들이 나뉘어서 존재*
+PE header
+- DOS header-DOS stub- NT header- Section header(text)-Section header(data)-Section header(rsrc)
+
+PE body
+- Section (text) - Section(data) - Section(rsrc)
+
+===========================================================================================
+
+DOS header
+- 하위호환성을 고려.
+ IMAGE_DOS_HEADER
+ e_magic = DOS signature (4D5A - MZ)
+ e_lfanew = NT header 구조체
+
+ elfanew 값 000000E0
+ 
+PE 스펙은 e_magic의 4D5A값 고려
+          e_lfanew의 값 이 있어야함 Little Endian표기법임(intel계열이라)
+
+이 두 값이 변하면 정상 실행이 안된다.
+
+
+===========================================================================================
+
+DOS stub
+- 옵션이기 때문에 없어도 문제가 없음
+
+===========================================================================================
+
+NT header
+- IMAGE_NT_HEADERS ( 구조체크기는 F8h , 멤버변수:Signature,FileHeader,OptionalHeader)
+
+ Signature = 50450000("PE"00)변경불가 라는 문자열을 가지고있다.(PE부터 NT header라고보면됨)
+
+ FileHeader = IMAGE_FILE_HEADER (4가지가 중요! 이값들 비정상적이면 실행불가)
+
+ - Machine              - CPU별로 고유한 값 32 bit intel 계열은( 14Ch )
+
+ - NumberOfSections     - PE파일은 코드,데이타,리소스.. 각섹션에 나뉘어 저장된다. 그 섹션의 갯수.
+                        - 정의된 갯수만큼 인식함.
+
+ - SizeOfOptionalHeader - IMAGE_NT_HEADER의 마지막 멤버인 IMAGE_OPTIONAL_HEADER32(32bit) 구조체의 크기
+                        - 이 값을 보고 optionalheader의 크기를 인식함.
+
+ - Characteristics      - 파일의 속성을 나타내는 값 , 실행 가능한 형태인지, DLL파일인지 등의 정보들이 bit OR형식으로
+                        - 0002h, 2000h ( 0x0002, 0x2000 )
+                        - 0002h(0x0002)가 없는경우(not executable)는 실행파일이 아니다( .obj, resource DLL )
+                        - 예) IMAGE_FILE_EXECUTABLE_IMAGE  0x0002 // file is executable 이면 exe파일형태
+
+ - TimeDateStamp        - 파일의 빌드 시간.
+
+ OptionalHeader = IMAGE_OPTIONAL_HEADER32(32bit) 
+ 
+ - Magic                - 32(bit) 10Bh, 64(bit) 20Bh 값
+
+ - AddressOfEntryPoint  - EP(Entry Point) 의 RVA(Relative Virtual Address)값
+
+ - ImageBase            - 메모리 내에서 PE파일이 로딩(매핑)되는 시작 주소
+                        - EXE, DLL파일은 user memory인 0 ~ 7FFFFFFFh 위치, 
+                        - SYS파일은 kernel memory인 80000000h ~ FFFFFFFh에 위치
+                        - 일반적으로는 EXE의 IMageBase값은 00400000h이고, DLL파일은 01000000h 이다.
+                        - PE loader는 PE파일을 실행시키기위해 프로세스 생성 -> 파일을 메모리에 매핑 -> EIP레지스터 값을 ImageBase+AddressOfEntryPoint값으로 세팅
+
+ - SectionAlignment,
+   FileAlignment        - PE파일은 섹션단위로 나뉘어져있는데 
+                        - 파일에서 섹션의 최소단위를 나타내는것 - FileAlignment
+                        - 메모리에서 섹션의 최소단위를나타내는것 - SectionAlignment
+                        - 파일/메모리의 섹션크기는 반드시 이 두값의 배수가 되어야 한다.
+
+ - SizeOfImage          - PE파일이 메모리에 로딩되었을때 가상메모리에서 PE Image가 차지하는 크기
+                        - 파일의 크기와 메모리에 로딩된 크기는다르다.
+
+ - SizeOfHeader         - PE header의 전체 크기 , 이값도 FileAlignment의 배수 이어야한다.
+                        - 파일 시작에서 SizeOfHeader 옵셋만큼 떨어진 위치에서 첫번째 섹션이 위치
+
+ - Subsystem            - Driver file (.sys)
+                        - GUI 파일 - notepad.exe와 같은 윈도우 기반 어플
+                        - CUI 파일 - cmd.exe와 같은 콘솔 기반 어플
+ 
+ - NumberOfRvaAndSizes  - 마지막 멤버인 DataDirectory배열의 갯수
+                        - PE loader는 NumberOfRvaAndSizes의 값을 보고 배열의 크기를 인식
+
+ - DataDirectory        - IMAGE_DATA_DIRECTORY구조체의 배열
+                        - EXPORT Directory, IMPORT Directory, RESOURCE Directory, TLS Directory, 중요
+
+=============================================================================================
+
+Section header (속성을 정의)
+
+- PE파일을 여러개의 section 구조로 만든 이유는 프로그램의 안정성 때문이다.
+  code,data,resource 각각의 성격(특징,엑세스권한)이 틀리다는것 때문에 여러개의 section으로 만들었다.
+  ( 하나의 섹션으로 만들경우 overflow가 발생(버퍼크기를 초과해서 입력)했을때 다음 code를 덮어 써버릴수도 있으니..)
+
+code     - 실행,읽기권한
+data     - 비실행, 읽기,쓰기권한
+resource - 비실행, 읽기권한
+
+- section의 속성을 기술할 section header가 필요하다.
+  (section의 속성에는 file/memory에서의 시작위치, 크기, 엑세스 권한등이 있다)
+
+- IMAGE_SECTION_HEADER ( 주요변수: VirtualSize, VirtualAddress, SizeOfRawData, PointerToRawData, Characteristics)
+
+  VirtualAddress 과 PointerToRawData는 SectionAlignment와 FileAlignment에 맞게 값이 결정된다.
+  VirtualSize와 SizeOfRawData는 서로 틀린값cx이다. 이유는 파일에서의 섹션크기와 메모리에 로딩된 섹션의 크기는 틀리기때문
+  Characteristics - 예 ) IMAGE_SCN_CNT_CODE, IMAGE_SCN_CNT_INITIALIZED_DATA,
+
+
+=============================================================================================
+
+RVA to RAW
+
+- PE 파일이 메모리에 로딩되었을때 각 섹션에서 메모리의 주소(RVA)와 파일 옵셋이잘 매핑 할 수 있어야된다.
+  이러한 매핑을 RVA to RAW라고 부른다.
+
+- 1) RVA가 속해 있는섹션을 찾는다.
+  2) 간단한 비례식을 사용해서 파일옵셋(RAW)를 계산한다.
+
+비례식 = RAW - PointerToRawData = RVA - VirtualAddress
+                            RAW = RVA - VirtualAddress + PointerToRawData
+
+=============================================================================================
